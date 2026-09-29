@@ -1,29 +1,36 @@
-# Terraform
-.terraform/
-*.tfstate
-*.tfstate.*
-crash.log
-crash.*.log
+# Terraform state — NEVER commit state files
+**/*.tfstate
+**/*.tfstate.*
+**/.terraform/
+**/.terraform.lock.hcl
+
+# Terraform plan output
+*.tfplan
+*.tfplan.json
+
+# Sensitive variable files
 *.tfvars
 *.tfvars.json
-!*.tfvars.example
+!example.tfvars
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Override files (local developer overrides)
 override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
-*.tfplan
-tfplan
+
+# Terraform CLI config
 .terraformrc
 terraform.rc
 
-# Secrets / credentials
-*.pem
-*.key
-.env
-.env.*
-kubeconfig*
-
-# OS / editor
+# OS files
 .DS_Store
+Thumbs.db
+
+# IDE
 .idea/
 .vscode/
