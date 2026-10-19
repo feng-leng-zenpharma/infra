@@ -188,6 +188,38 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
+      # ALBs/target groups/SGs created by the AWS Load Balancer Controller are
+      # not in Terraform state. If the cluster goes first they are orphaned and
+      # block subnet/IGW deletion, so remove them while the controller still runs.
+      - name: Clean up Kubernetes-managed load balancers
+        run: |
+          CLUSTER=$(terraform output -raw eks_cluster_name 2>/dev/null || true)
+          if [ -z "$CLUSTER" ] || ! aws eks describe-cluster --name "$CLUSTER" >/dev/null 2>&1; then
+            echo "No EKS cluster found, skipping"
+            exit 0
+          fi
+          aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
+
+          # Stop ArgoCD first, otherwise selfHeal recreates the ingresses
+          kubectl -n argocd scale statefulset,deployment --all --replicas=0 || true
+
+          kubectl delete ingress --all --all-namespaces --wait=false
+          kubectl get svc -A -o json \
+            | jq -r '.items[] | select(.spec.type=="LoadBalancer") | "\(.metadata.namespace) \(.metadata.name)"' \
+            | while read -r ns name; do kubectl -n "$ns" delete svc "$name" --wait=false; done
+
+          for i in $(seq 1 60); do
+            LEFT=$(aws resourcegroupstaggingapi get-resources \
+              --resource-type-filters elasticloadbalancing:loadbalancer \
+              --tag-filters Key=elbv2.k8s.aws/cluster,Values="$CLUSTER" \
+              --query 'length(ResourceTagMappingList)' --output text)
+            echo "Controller-managed load balancers remaining: $LEFT"
+            [ "$LEFT" = "0" ] && exit 0
+            sleep 10
+          done
+          echo "Timed out waiting for load balancers to be deleted"
+          exit 1
+
       - name: Terraform Destroy
         run: |
           terraform destroy \
